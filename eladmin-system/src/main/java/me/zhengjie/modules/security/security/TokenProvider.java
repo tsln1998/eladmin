@@ -18,11 +18,16 @@ package me.zhengjie.modules.security.security;
 import cn.hutool.core.date.DateField;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.IdUtil;
+import com.google.common.base.Strings;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import me.zhengjie.modules.security.config.bean.SecurityProperties;
+import me.zhengjie.modules.system.service.AccessTokenService;
+import me.zhengjie.modules.system.service.UserService;
+import me.zhengjie.modules.system.service.dto.AccessTokenDto;
+import me.zhengjie.modules.system.service.dto.UserDto;
 import me.zhengjie.utils.RedisUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -43,13 +48,17 @@ public class TokenProvider implements InitializingBean {
 
     private final SecurityProperties properties;
     private final RedisUtils redisUtils;
+    private final AccessTokenService accessTokenService;
+    private final UserService userService;
     public static final String AUTHORITIES_KEY = "user";
     private JwtParser jwtParser;
     private JwtBuilder jwtBuilder;
 
-    public TokenProvider(SecurityProperties properties, RedisUtils redisUtils) {
+    public TokenProvider(SecurityProperties properties, RedisUtils redisUtils, AccessTokenService accessTokenService, UserService userService) {
         this.properties = properties;
         this.redisUtils = redisUtils;
+        this.accessTokenService = accessTokenService;
+        this.userService = userService;
     }
 
     @Override
@@ -117,6 +126,17 @@ public class TokenProvider implements InitializingBean {
         final String requestHeader = request.getHeader(properties.getHeader());
         if (requestHeader != null && requestHeader.startsWith(properties.getTokenStartWith())) {
             return requestHeader.substring(7);
+        }
+        return null;
+    }
+
+    public Authentication getAuthenticationOfAccessToken(String appId, String appKey) {
+        AccessTokenDto tokenDto = accessTokenService.findByAppId(appId);
+        if (tokenDto.getAppKey().equalsIgnoreCase(Strings.nullToEmpty(appKey))) {
+            UserDto userDto = userService.findById(tokenDto.getUserId());
+
+            User principal = new User(userDto.getUsername(), "******", new ArrayList<>());
+            return new UsernamePasswordAuthenticationToken(principal, appKey, new ArrayList<>());
         }
         return null;
     }

@@ -17,12 +17,14 @@ package me.zhengjie.modules.system.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import me.zhengjie.config.FileProperties;
+import me.zhengjie.exception.BadRequestException;
 import me.zhengjie.modules.security.service.OnlineUserService;
 import me.zhengjie.modules.security.service.UserCacheClean;
 import me.zhengjie.modules.system.domain.User;
 import me.zhengjie.exception.EntityExistException;
 import me.zhengjie.exception.EntityNotFoundException;
 import me.zhengjie.modules.system.repository.UserRepository;
+import me.zhengjie.modules.system.service.DataFilterService;
 import me.zhengjie.modules.system.service.UserService;
 import me.zhengjie.modules.system.service.dto.JobSmallDto;
 import me.zhengjie.modules.system.service.dto.RoleSmallDto;
@@ -37,6 +39,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import javax.persistence.criteria.Predicate;
 import javax.servlet.http.HttpServletResponse;
 import javax.validation.constraints.NotBlank;
 import java.io.File;
@@ -59,16 +63,27 @@ public class UserServiceImpl implements UserService {
     private final RedisUtils redisUtils;
     private final UserCacheClean userCacheClean;
     private final OnlineUserService onlineUserService;
+    private final DataFilterService dataFilterService;
 
     @Override
     public Object queryAll(UserQueryCriteria criteria, Pageable pageable) {
-        Page<User> page = userRepository.findAll((root, criteriaQuery, criteriaBuilder) -> QueryHelp.getPredicate(root, criteria, criteriaBuilder), pageable);
+        Page<User> page = userRepository.findAll((root, query, cb) -> {
+            Predicate predicate = QueryHelp.getPredicate(root, query, cb);
+            if (dataFilterService.isNeedFilter())
+                predicate = cb.and(predicate, root.get("id").in(dataFilterService.getUserIds()));
+            return predicate;
+        }, pageable);
         return PageUtil.toPage(page.map(userMapper::toDto));
     }
 
     @Override
     public List<UserDto> queryAll(UserQueryCriteria criteria) {
-        List<User> users = userRepository.findAll((root, criteriaQuery, criteriaBuilder) -> QueryHelp.getPredicate(root, criteria, criteriaBuilder));
+        List<User> users = userRepository.findAll((root, query, cb) -> {
+            Predicate predicate = QueryHelp.getPredicate(root, query, cb);
+            if (dataFilterService.isNeedFilter())
+                predicate = cb.and(predicate, root.get("id").in(dataFilterService.getUserIds()));
+            return predicate;
+        });
         return userMapper.toDto(users);
     }
 
@@ -84,6 +99,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void create(User resources) {
+        resources.setParentId(dataFilterService.getParentId());
         if (userRepository.findByUsername(resources.getUsername()) != null) {
             throw new EntityExistException(User.class, "username", resources.getUsername());
         }
@@ -115,6 +131,9 @@ public class UserServiceImpl implements UserService {
         }
         // 如果用户的角色改变
         if (!resources.getRoles().equals(user.getRoles())) {
+            if (Objects.equals(user.getId(), SecurityUtils.getCurrentUserId())) {
+                throw new BadRequestException("您不能修改自己的角色");
+            }
             redisUtils.del(CacheKey.DATA_USER + resources.getId());
             redisUtils.del(CacheKey.MENU_USER + resources.getId());
             redisUtils.del(CacheKey.ROLE_AUTH + resources.getId());
@@ -127,8 +146,6 @@ public class UserServiceImpl implements UserService {
         user.setEmail(resources.getEmail());
         user.setEnabled(resources.getEnabled());
         user.setRoles(resources.getRoles());
-        user.setDept(resources.getDept());
-        user.setJobs(resources.getJobs());
         user.setPhone(resources.getPhone());
         user.setNickName(resources.getNickName());
         user.setGender(resources.getGender());
@@ -215,8 +232,6 @@ public class UserServiceImpl implements UserService {
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("用户名", userDTO.getUsername());
             map.put("角色", roles);
-            map.put("部门", userDTO.getDept().getName());
-            map.put("岗位", userDTO.getJobs().stream().map(JobSmallDto::getName).collect(Collectors.toList()));
             map.put("邮箱", userDTO.getEmail());
             map.put("状态", userDTO.getEnabled() ? "启用" : "禁用");
             map.put("手机号码", userDTO.getPhone());

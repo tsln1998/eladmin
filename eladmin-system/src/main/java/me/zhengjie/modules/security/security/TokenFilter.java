@@ -16,6 +16,7 @@
 package me.zhengjie.modules.security.security;
 
 import cn.hutool.core.util.StrUtil;
+import com.google.common.base.Strings;
 import io.jsonwebtoken.ExpiredJwtException;
 import me.zhengjie.modules.security.config.bean.SecurityProperties;
 import me.zhengjie.modules.security.service.UserCacheClean;
@@ -66,6 +67,8 @@ public class TokenFilter extends GenericFilterBean {
             throws IOException, ServletException {
         HttpServletRequest httpServletRequest = (HttpServletRequest) servletRequest;
         String token = resolveToken(httpServletRequest);
+        String appId = resolveAppId(httpServletRequest);
+        String appKey = resolveAppKey(httpServletRequest);
         // 对于 Token 为空的不需要去查 Redis
         if (StrUtil.isNotBlank(token)) {
             OnlineUserDto onlineUserDto = null;
@@ -86,6 +89,9 @@ public class TokenFilter extends GenericFilterBean {
                 // Token 续期
                 tokenProvider.checkRenewal(token);
             }
+        } else if (StrUtil.isNotBlank(appId)) {
+            Authentication authentication = tokenProvider.getAuthenticationOfAccessToken(appId, appKey);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
         }
         filterChain.doFilter(servletRequest, servletResponse);
     }
@@ -105,5 +111,13 @@ public class TokenFilter extends GenericFilterBean {
             log.debug("非法Token：{}", bearerToken);
         }
         return null;
+    }
+
+    private String resolveAppId(HttpServletRequest request) {
+        return Strings.emptyToNull(request.getHeader("APP-ID"));
+    }
+
+    private String resolveAppKey(HttpServletRequest request) {
+        return Strings.emptyToNull(request.getHeader("APP-KEY"));
     }
 }

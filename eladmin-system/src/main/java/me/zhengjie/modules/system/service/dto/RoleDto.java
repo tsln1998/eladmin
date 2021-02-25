@@ -34,15 +34,13 @@ public class RoleDto extends BaseDTO implements Serializable {
 
     private Set<MenuDto> menus;
 
-    private Set<DeptDto> depts;
-
     private String name;
 
-    private String dataScope;
-
-    private Integer level;
+    private Boolean breakLookup;
 
     private String description;
+    
+    private Long createById;
 
     @Override
     public boolean equals(Object o) {

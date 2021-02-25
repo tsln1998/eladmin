@@ -56,7 +56,7 @@ public class RoleController {
 
     @ApiOperation("获取单个role")
     @GetMapping(value = "/{id}")
-    @PreAuthorize("@el.check('roles:list')")
+    @PreAuthorize("@el.check('roles:list') && @filter.accessRoleCheck(#id)")
     public ResponseEntity<Object> query(@PathVariable Long id){
         return new ResponseEntity<>(roleService.findById(id), HttpStatus.OK);
     }
@@ -82,12 +82,6 @@ public class RoleController {
         return new ResponseEntity<>(roleService.queryAll(criteria,pageable),HttpStatus.OK);
     }
 
-    @ApiOperation("获取用户级别")
-    @GetMapping(value = "/level")
-    public ResponseEntity<Object> getLevel(){
-        return new ResponseEntity<>(Dict.create().set("level", getLevels(null)),HttpStatus.OK);
-    }
-
     @Log("新增角色")
     @ApiOperation("新增角色")
     @PostMapping
@@ -96,7 +90,6 @@ public class RoleController {
         if (resources.getId() != null) {
             throw new BadRequestException("A new "+ ENTITY_NAME +" cannot already have an ID");
         }
-        getLevels(resources.getLevel());
         roleService.create(resources);
         return new ResponseEntity<>(HttpStatus.CREATED);
     }
@@ -104,9 +97,8 @@ public class RoleController {
     @Log("修改角色")
     @ApiOperation("修改角色")
     @PutMapping
-    @PreAuthorize("@el.check('roles:edit')")
+    @PreAuthorize("@el.check('roles:edit') && @filter.accessRoleCheck(#resources.id)")
     public ResponseEntity<Object> update(@Validated(Role.Update.class) @RequestBody Role resources){
-        getLevels(resources.getLevel());
         roleService.update(resources);
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
@@ -114,10 +106,9 @@ public class RoleController {
     @Log("修改角色菜单")
     @ApiOperation("修改角色菜单")
     @PutMapping(value = "/menu")
-    @PreAuthorize("@el.check('roles:edit')")
+    @PreAuthorize("@el.check('roles:edit') && @filter.accessRoleCheck(#resources.id)")
     public ResponseEntity<Object> updateMenu(@RequestBody Role resources){
         RoleDto role = roleService.findById(resources.getId());
-        getLevels(role.getLevel());
         roleService.updateMenu(resources,role);
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
@@ -125,30 +116,11 @@ public class RoleController {
     @Log("删除角色")
     @ApiOperation("删除角色")
     @DeleteMapping
-    @PreAuthorize("@el.check('roles:del')")
+    @PreAuthorize("@el.check('roles:del') && @filter.accessRoleCheck(#ids)")
     public ResponseEntity<Object> delete(@RequestBody Set<Long> ids){
-        for (Long id : ids) {
-            RoleDto role = roleService.findById(id);
-            getLevels(role.getLevel());
-        }
         // 验证是否被用户关联
         roleService.verification(ids);
         roleService.delete(ids);
         return new ResponseEntity<>(HttpStatus.OK);
-    }
-
-    /**
-     * 获取用户的角色级别
-     * @return /
-     */
-    private int getLevels(Integer level){
-        List<Integer> levels = roleService.findByUsersId(SecurityUtils.getCurrentUserId()).stream().map(RoleSmallDto::getLevel).collect(Collectors.toList());
-        int min = Collections.min(levels);
-        if(level != null){
-            if(level < min){
-                throw new BadRequestException("权限不足，你的角色级别：" + min + "，低于操作的角色级别：" + level);
-            }
-        }
-        return min;
     }
 }

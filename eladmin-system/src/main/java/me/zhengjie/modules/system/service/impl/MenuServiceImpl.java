@@ -18,13 +18,13 @@ package me.zhengjie.modules.system.service.impl;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.ObjectUtil;
 import lombok.RequiredArgsConstructor;
+import me.zhengjie.exception.BadRequestException;
+import me.zhengjie.exception.EntityExistException;
 import me.zhengjie.modules.system.domain.Menu;
 import me.zhengjie.modules.system.domain.Role;
 import me.zhengjie.modules.system.domain.User;
 import me.zhengjie.modules.system.domain.vo.MenuMetaVo;
 import me.zhengjie.modules.system.domain.vo.MenuVo;
-import me.zhengjie.exception.BadRequestException;
-import me.zhengjie.exception.EntityExistException;
 import me.zhengjie.modules.system.repository.MenuRepository;
 import me.zhengjie.modules.system.repository.UserRepository;
 import me.zhengjie.modules.system.service.MenuService;
@@ -217,6 +217,8 @@ public class MenuServiceImpl implements MenuService {
         } else {
             menus = menuRepository.findByPidIsNull();
         }
+        // 获取用户拥有的菜单
+        roleService.doRemoveUnauthorizedMenus(menus);
         return menuMapper.toDto(menus);
     }
 

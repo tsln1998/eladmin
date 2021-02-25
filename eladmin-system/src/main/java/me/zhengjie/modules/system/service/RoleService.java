@@ -15,6 +15,7 @@
  */
 package me.zhengjie.modules.system.service;
 
+import me.zhengjie.modules.system.domain.Menu;
 import me.zhengjie.modules.system.domain.Role;
 import me.zhengjie.modules.system.service.dto.RoleDto;
 import me.zhengjie.modules.system.service.dto.RoleQueryCriteria;
@@ -24,6 +25,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.GrantedAuthority;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -70,13 +72,6 @@ public interface RoleService {
      * @return /
      */
     List<RoleSmallDto> findByUsersId(Long id);
-
-    /**
-     * 根据角色查询角色级别
-     * @param roles /
-     * @return /
-     */
-    Integer findByRoles(Set<Role> roles);
 
     /**
      * 修改绑定的菜单
@@ -133,4 +128,6 @@ public interface RoleService {
      * @return /
      */
     List<Role> findInMenuId(List<Long> menuIds);
+
+    void doRemoveUnauthorizedMenus(Collection<Menu> orgMenus);
 }

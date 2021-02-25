@@ -25,6 +25,7 @@ import me.zhengjie.exception.EntityExistException;
 import me.zhengjie.modules.system.domain.User;
 import me.zhengjie.modules.system.repository.RoleRepository;
 import me.zhengjie.modules.system.repository.UserRepository;
+import me.zhengjie.modules.system.service.DataFilterService;
 import me.zhengjie.modules.system.service.RoleService;
 import me.zhengjie.modules.system.service.dto.RoleDto;
 import me.zhengjie.modules.system.service.dto.RoleQueryCriteria;
@@ -43,6 +44,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.persistence.criteria.Predicate;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.*;
@@ -63,21 +65,46 @@ public class RoleServiceImpl implements RoleService {
     private final RedisUtils redisUtils;
     private final UserRepository userRepository;
     private final UserCacheClean userCacheClean;
+    private final DataFilterService dataFilterService;
 
     @Override
     public List<RoleDto> queryAll() {
-        Sort sort = Sort.by(Sort.Direction.ASC, "level");
-        return roleMapper.toDto(roleRepository.findAll(sort));
+        Sort sort = Sort.by(Sort.Direction.DESC, "id");
+        return roleMapper.toDto(roleRepository.findAll((root, query, cb) -> {
+            Predicate predicate = cb.or(
+                    root.get("createById").in(dataFilterService.getUserIds(true, false)),
+                    cb.equal(root.get("createById"), 0)
+            );
+            return predicate;
+        }, sort));
     }
 
     @Override
     public List<RoleDto> queryAll(RoleQueryCriteria criteria) {
-        return roleMapper.toDto(roleRepository.findAll((root, criteriaQuery, criteriaBuilder) -> QueryHelp.getPredicate(root, criteria, criteriaBuilder)));
+        return roleMapper.toDto(roleRepository.findAll((root, query, cb) -> {
+            Predicate predicate = QueryHelp.getPredicate(root, criteria, cb);
+            predicate = cb.and(predicate,
+                    cb.or(
+                            root.get("createById").in(dataFilterService.getUserIds(true, false)),
+                            cb.equal(root.get("createById"), 0)
+                    )
+            );
+            return predicate;
+        }));
     }
 
     @Override
     public Object queryAll(RoleQueryCriteria criteria, Pageable pageable) {
-        Page<Role> page = roleRepository.findAll((root, criteriaQuery, criteriaBuilder) -> QueryHelp.getPredicate(root, criteria, criteriaBuilder), pageable);
+        Page<Role> page = roleRepository.findAll((root, query, cb) -> {
+            Predicate predicate = QueryHelp.getPredicate(root, criteria, cb);
+            predicate = cb.and(predicate,
+                    cb.or(
+                            root.get("createById").in(dataFilterService.getUserIds(true, false)),
+                            cb.equal(root.get("createById"), 0)
+                    )
+            );
+            return predicate;
+        }, pageable);
         return PageUtil.toPage(page.map(roleMapper::toDto));
     }
 
@@ -96,6 +123,8 @@ public class RoleServiceImpl implements RoleService {
         if (roleRepository.findByName(resources.getName()) != null) {
             throw new EntityExistException(Role.class, "username", resources.getName());
         }
+        resources.setCreateById(dataFilterService.getParentId());
+        doRemoveUnauthorizedMenus(resources.getMenus());
         roleRepository.save(resources);
     }
 
@@ -112,9 +141,6 @@ public class RoleServiceImpl implements RoleService {
         }
         role.setName(resources.getName());
         role.setDescription(resources.getDescription());
-        role.setDataScope(resources.getDataScope());
-        role.setDepts(resources.getDepts());
-        role.setLevel(resources.getLevel());
         roleRepository.save(role);
         // 更新相关缓存
         delCaches(role.getId(), null);
@@ -122,6 +148,8 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     public void updateMenu(Role resources, RoleDto roleDTO) {
+        doRemoveUnauthorizedMenus(resources.getMenus());
+
         Role role = roleMapper.toEntity(roleDTO);
         List<User> users = userRepository.findByRoleId(role.getId());
         // 更新菜单
@@ -153,18 +181,6 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
-    public Integer findByRoles(Set<Role> roles) {
-        if (roles.size() == 0) {
-            return Integer.MAX_VALUE;
-        }
-        Set<RoleDto> roleDtos = new HashSet<>();
-        for (Role role : roles) {
-            roleDtos.add(findById(role.getId()));
-        }
-        return Collections.min(roleDtos.stream().map(RoleDto::getLevel).collect(Collectors.toList()));
-    }
-
-    @Override
     @Cacheable(key = "'auth:' + #p0.id")
     public List<GrantedAuthority> mapToGrantedAuthorities(UserDto user) {
         Set<String> permissions = new HashSet<>();
@@ -188,7 +204,6 @@ public class RoleServiceImpl implements RoleService {
         for (RoleDto role : roles) {
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("角色名称", role.getName());
-            map.put("角色级别", role.getLevel());
             map.put("描述", role.getDescription());
             map.put("创建日期", role.getCreateTime());
             list.add(map);
@@ -210,6 +225,7 @@ public class RoleServiceImpl implements RoleService {
 
     /**
      * 清理缓存
+     *
      * @param id /
      */
     public void delCaches(Long id, List<User> users) {
@@ -222,5 +238,29 @@ public class RoleServiceImpl implements RoleService {
             redisUtils.delByKeys(CacheKey.ROLE_AUTH, userIds);
         }
         redisUtils.del(CacheKey.ROLE_ID + id);
+    }
+
+    @Override
+    public void doRemoveUnauthorizedMenus(Collection<Menu> orgMenus) {
+        if (Objects.isNull(orgMenus) || orgMenus.size() == 0)
+            return;
+        if (!dataFilterService.isNeedFilter())
+            return;
+        Set<Long> menuIds = getCurrentUserAuthorizedMenus();
+        Set<Menu> needRemove = orgMenus.stream()
+                .filter(m -> !menuIds.contains(m.getId()))
+                .collect(Collectors.toSet());
+        orgMenus.removeAll(needRemove);
+    }
+
+    private Set<Long> getCurrentUserAuthorizedMenus() {
+        // 获取用户拥有的菜单
+        User user = userRepository.findById(dataFilterService.getParentId()).orElseGet(User::new);
+        return user.getRoles()
+                .stream()
+                .map(Role::getMenus)
+                .flatMap(Set::stream)
+                .map(Menu::getId)
+                .collect(Collectors.toSet());
     }
 }

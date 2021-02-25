@@ -16,9 +16,11 @@
 package me.zhengjie.modules.system.domain;
 
 import com.alibaba.fastjson.annotation.JSONField;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 import me.zhengjie.base.BaseEntity;
 import me.zhengjie.utils.enums.DataScopeEnum;
 
@@ -38,6 +40,7 @@ import java.util.Set;
 @Setter
 @Entity
 @Table(name = "sys_role")
+@Accessors(chain = true)
 public class Role extends BaseEntity implements Serializable {
 
     @Id
@@ -59,26 +62,19 @@ public class Role extends BaseEntity implements Serializable {
     @ApiModelProperty(value = "菜单", hidden = true)
     private Set<Menu> menus;
 
-    @ManyToMany
-    @JoinTable(name = "sys_roles_depts",
-            joinColumns = {@JoinColumn(name = "role_id",referencedColumnName = "role_id")},
-            inverseJoinColumns = {@JoinColumn(name = "dept_id",referencedColumnName = "dept_id")})
-    @ApiModelProperty(value = "部门", hidden = true)
-    private Set<Dept> depts;
-
     @NotBlank
     @ApiModelProperty(value = "名称", hidden = true)
     private String name;
 
-    @ApiModelProperty(value = "数据权限，全部 、 本级 、 自定义")
-    private String dataScope = DataScopeEnum.THIS_LEVEL.getValue();
-
-    @Column(name = "level")
-    @ApiModelProperty(value = "级别，数值越小，级别越大")
-    private Integer level = 3;
-
     @ApiModelProperty(value = "描述")
     private String description;
+
+    @Column(name = "break_lookup", insertable = false, updatable = false)
+    @JsonIgnore
+    private Boolean breakLookup;
+
+    @Column(name = "create_by_id", updatable = false)
+    private Long createById;
 
     @Override
     public boolean equals(Object o) {

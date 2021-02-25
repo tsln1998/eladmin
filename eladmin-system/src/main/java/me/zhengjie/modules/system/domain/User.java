@@ -52,18 +52,6 @@ public class User extends BaseEntity implements Serializable {
             inverseJoinColumns = {@JoinColumn(name = "role_id",referencedColumnName = "role_id")})
     private Set<Role> roles;
 
-    @ManyToMany
-    @ApiModelProperty(value = "用户岗位")
-    @JoinTable(name = "sys_users_jobs",
-            joinColumns = {@JoinColumn(name = "user_id",referencedColumnName = "user_id")},
-            inverseJoinColumns = {@JoinColumn(name = "job_id",referencedColumnName = "job_id")})
-    private Set<Job> jobs;
-
-    @OneToOne
-    @JoinColumn(name = "dept_id")
-    @ApiModelProperty(value = "用户部门")
-    private Dept dept;
-
     @NotBlank
     @Column(unique = true)
     @ApiModelProperty(value = "用户名称")
@@ -104,6 +92,9 @@ public class User extends BaseEntity implements Serializable {
     @Column(name = "pwd_reset_time")
     @ApiModelProperty(value = "最后修改密码的时间", hidden = true)
     private Date pwdResetTime;
+
+    @Column(name = "parent_id", updatable = false)
+    private Long parentId;
 
     @Override
     public boolean equals(Object o) {
